@@ -6,41 +6,58 @@ using Microsoft.Extensions.Logging;
 
 namespace DurableFunctionsDemo
 {
+    public record PriceListOrchestratorInput(DateOnly PriceListDate);
+    public record PriceListOrchestratorResult(List<string> GeneratePriceListResults);
     public class PriceListOrchestrator
     {
         [Function($"{nameof(PriceListOrchestrator)}")]
-        public async Task<List<string>> Run(
+        public async Task<PriceListOrchestratorResult> Run(
             [OrchestrationTrigger] TaskOrchestrationContext context)
         {
-            var importDataResult = await ImportData(context);
+            var input = context.GetInput<PriceListOrchestratorInput>() ?? throw new ArgumentNullException(nameof(PriceListOrchestratorInput));
+            
+            var importResult = await context.CallSubOrchestratorAsync<ImportDataOrchestratorResult>(
+                nameof(ImportDataOrchestrator),
+                  new ImportDataOrchestratorInput(input.PriceListDate));
 
-            return await GeneratePriceLists(context);
-        }
-
-
-
-        private async Task<List<string>> GeneratePriceLists(TaskOrchestrationContext context)
-        {
-            var generatePriceListInput = new GeneratePriceListActivityInput(new DateOnly(2022, 1, 1));
-            var generatePriceListResults = new List<string>
+            if (importResult.ImportResults.Any(x => !x.Success))
             {
-                await context.CallActivityAsync<string>(nameof(GeneratePriceListActivity), generatePriceListInput),
-                await context.CallActivityAsync<string>(nameof(GeneratePriceListActivity), generatePriceListInput),
-                await context.CallActivityAsync<string>(nameof(GeneratePriceListActivity), generatePriceListInput)
-            };
+                // TODO: Call SendEmailToAdminActivity - pass failed results to include in email message?
+                throw new Exception("Some imports failed");
+            }
+            
+            var generatePriceListResults = await GeneratePriceLists(context, input.PriceListDate);
 
-            return generatePriceListResults;
+            return new PriceListOrchestratorResult(generatePriceListResults.ToList());
         }
 
+        private Task<string[]> GeneratePriceLists(TaskOrchestrationContext context,
+            DateOnly priceListDate)
+        {
+            
+            var generatePriceListTasks =  Enumerable.Range(1, 5000)
+                .Select(x =>
+                {
+                    var input = new GeneratePriceListActivityInput(priceListDate);
+                    return context.CallActivityAsync<string>(nameof(GeneratePriceListActivity), input);
+                }).ToList();
+
+            return Task.WhenAll(generatePriceListTasks);
+        }
+
+        //TODO: Add OpenApi attributes
         [Function($"{nameof(PriceListOrchestrator)}{nameof(HttpStart)}")]
         public async Task<HttpResponseData> HttpStart(
             [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequestData req,
             [DurableClient] DurableTaskClient client,
             FunctionContext executionContext)
         {
-            string instanceId = await client.ScheduleNewOrchestrationInstanceAsync(nameof(PriceListOrchestrator));
+            //TODO: Get price list date from request
 
-            var logger = executionContext.GetLogger("Function1_HttpStart");
+            string instanceId = await client.ScheduleNewOrchestrationInstanceAsync(nameof(PriceListOrchestrator),
+                new PriceListOrchestratorInput(new DateOnly(2023, 06, 23)));
+
+            var logger = executionContext.GetLogger($"{nameof(PriceListOrchestrator)}{nameof(HttpStart)}");
             logger.LogInformation("Started orchestration with ID = '{instanceId}'.", instanceId);
 
             return client.CreateCheckStatusResponse(req, instanceId);
@@ -55,9 +72,14 @@ namespace DurableFunctionsDemo
         {
             var logger = executionContext.GetLogger(nameof(GeneratePriceListActivity));
             logger.LogInformation("Generating Price List for {PriceListGenerationDate:yyyy-MM-dd}.", input.PriceListDate);
-            var priceListNumber = new Random().Next().ToString();
 
-            return $"PriceList{priceListNumber} generated";
+            // Heavy computing simulation
+            Thread.Sleep(Random.Shared.Next(300, 500)); 
+
+            var priceListNumber = Random.Shared.Next();
+            logger.LogInformation("Price List {PriceListNumber} has been generated.", priceListNumber);
+
+            return $"Generated Price List #{priceListNumber}";
         }
     }
 }
