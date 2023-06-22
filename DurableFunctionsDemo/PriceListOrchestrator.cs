@@ -14,7 +14,8 @@ namespace DurableFunctionsDemo
         public async Task<PriceListOrchestratorResult> Run(
             [OrchestrationTrigger] TaskOrchestrationContext context)
         {
-            var input = context.GetInput<PriceListOrchestratorInput>() ?? throw new ArgumentNullException(nameof(PriceListOrchestratorInput));
+            var input = context.GetInput<PriceListOrchestratorInput>() 
+                        ?? throw new ArgumentNullException(nameof(PriceListOrchestratorInput));
             
             var importResult = await context.CallSubOrchestratorAsync<ImportDataOrchestratorResult>(
                 nameof(ImportDataOrchestrator),
@@ -31,16 +32,14 @@ namespace DurableFunctionsDemo
             return new PriceListOrchestratorResult(generatePriceListResults.ToList());
         }
 
-        private Task<string[]> GeneratePriceLists(TaskOrchestrationContext context,
+        private static Task<string[]> GeneratePriceLists(TaskOrchestrationContext context,
             DateOnly priceListDate)
         {
             
             var generatePriceListTasks =  Enumerable.Range(1, 5000)
-                .Select(x =>
-                {
-                    var input = new GeneratePriceListActivityInput(priceListDate);
-                    return context.CallActivityAsync<string>(nameof(GeneratePriceListActivity), input);
-                }).ToList();
+                .Select(x 
+                    => context.CallActivityAsync<string>(nameof(GeneratePriceListActivity), 
+                        new GeneratePriceListActivityInput(priceListDate))).ToList();
 
             return Task.WhenAll(generatePriceListTasks);
         }
@@ -74,7 +73,7 @@ namespace DurableFunctionsDemo
             logger.LogInformation("Generating Price List for {PriceListGenerationDate:yyyy-MM-dd}.", input.PriceListDate);
 
             // Heavy computing simulation
-            Thread.Sleep(Random.Shared.Next(300, 500)); 
+            Thread.Sleep(Random.Shared.Next(1000, 2000)); 
 
             var priceListNumber = Random.Shared.Next();
             logger.LogInformation("Price List {PriceListNumber} has been generated.", priceListNumber);
