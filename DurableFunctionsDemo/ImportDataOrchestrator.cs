@@ -7,14 +7,24 @@ namespace DurableFunctionsDemo
     public record ImportDataOrchestratorInput(DateOnly PriceListDate);
     public record ImportDataOrchestratorResult(List<ImportDataActivityResult> ImportResults);
 
-    public static class ImportDataOrchestrator
+    public class ImportDataOrchestrator
     {
+        private readonly ILogger<ImportDataOrchestrator> _logger;
+
+        public ImportDataOrchestrator(ILogger<ImportDataOrchestrator> logger)
+        {
+            _logger = logger;
+        }
+
         [Function(nameof(ImportDataOrchestrator))]
-        public static async Task<ImportDataOrchestratorResult> RunOrchestrator(
+        public async Task<ImportDataOrchestratorResult> RunOrchestrator(
             [OrchestrationTrigger] TaskOrchestrationContext context)
         {
             var input = context.GetInput<ImportDataOrchestratorInput>() 
                         ?? throw new ArgumentNullException(nameof(ImportDataOrchestratorInput));
+
+            var time = DateTime.Now;
+            _logger.LogInformation(time.ToShortTimeString());
 
             var logger = context.CreateReplaySafeLogger(nameof(ImportDataOrchestrator));
             logger.LogInformation("Running orchestration for Importing Data");

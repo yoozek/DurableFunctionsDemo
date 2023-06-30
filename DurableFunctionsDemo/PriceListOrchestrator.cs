@@ -36,7 +36,7 @@ namespace DurableFunctionsDemo
             DateOnly priceListDate)
         {
             
-            var generatePriceListTasks =  Enumerable.Range(1, 5000)
+            var generatePriceListTasks =  Enumerable.Range(1, 10)
                 .Select(x 
                     => context.CallActivityAsync<string>(nameof(GeneratePriceListActivity), 
                         new GeneratePriceListActivityInput(priceListDate))).ToList();
@@ -66,8 +66,15 @@ namespace DurableFunctionsDemo
     public record GeneratePriceListActivityInput(DateOnly PriceListDate);
     public class GeneratePriceListActivity
     {
+        private readonly IBlobService _blobService;
+
+        public GeneratePriceListActivity(IBlobService blobService)
+        {
+            _blobService = blobService ?? throw new ArgumentNullException(nameof(blobService));
+        }
+
         [Function(nameof(GeneratePriceListActivity))]
-        public static string Run([ActivityTrigger] GeneratePriceListActivityInput input, FunctionContext executionContext)
+        public async Task<string> Run([ActivityTrigger] GeneratePriceListActivityInput input, FunctionContext executionContext)
         {
             var logger = executionContext.GetLogger(nameof(GeneratePriceListActivity));
             logger.LogInformation("Generating Price List for {PriceListGenerationDate:yyyy-MM-dd}.", input.PriceListDate);
@@ -76,7 +83,13 @@ namespace DurableFunctionsDemo
             Thread.Sleep(Random.Shared.Next(1000, 2000)); 
 
             var priceListNumber = Random.Shared.Next();
-            logger.LogInformation("Price List {PriceListNumber} has been generated.", priceListNumber);
+
+            using var stream = new MemoryStream();
+            await using var sw = new StreamWriter(stream);
+            await sw.WriteLineAsync($"Price List number {priceListNumber}");
+            await _blobService.UploadAsync(stream, "price-lists", $"{priceListNumber}.txt");
+
+            logger.LogInformation("Price List {PriceListNumber} has been uploaded to BlobStorage.", priceListNumber);
 
             return $"Generated Price List #{priceListNumber}";
         }
